@@ -54,6 +54,10 @@ struct
    | Snd t1 ->  Snd (scope_term sc t1)
    | Pair (t1,t2) -> Pair ((scope_term sc t1), (scope_term sc t2))
    | Sequence (t1,t2) -> Sequence ((scope_term sc t1),(scope_term sc t2))
+   | Letrec(id,ty,t1,t2) -> let scoped_ty = (scope_simple_type sc ty) 
+       and scoped_t1 = (scope_term (Scope.enter_value id sc) t1) 
+       and scoped_t2 = (scope_term (Scope.enter_value id sc) t2) in
+       Letrec(id,scoped_ty,scoped_t1,scoped_t2)
    | _ as t -> t
 
 

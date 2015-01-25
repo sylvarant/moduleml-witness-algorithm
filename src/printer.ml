@@ -166,17 +166,20 @@ struct
       print_expression e2; print_string ")"
     | If (e1,e2,e3) -> print_string "(if "; print_expression e1; print_string "then "; 
       print_expression e2; print_string "else "; print_expression e3; print_string ")"
-    | Let (x,e1,e2) -> print_string ("let "^(Ident.name x)^" = "); print_expression e1; 
-      print_string " in "; print_expression e2
-    | Prim (x,ls) -> print_string ("("^x^" "); 
-      (List.iter (fun e -> print_space(); print_expression e) ls)
+    | Let (x,e1,e2) -> print_string ("(let "^(Ident.name x)^" = "); print_expression e1; 
+      print_string " in "; print_expression e2; print_string ")"
+    | Prim (x,ls) -> print_string ("("^x); 
+      (List.iter (fun e -> print_string " "; print_expression e) ls); 
+      print_string ")"
     | Fst e -> print_string "fst "; print_expression e
     | Snd e -> print_string "snd "; print_expression e
-    | Sequence (e1,e2) -> print_expression e1; print_string ";" ; print_expression e2
+    | Sequence (e1,e2) -> print_expression e1; 
+      print_string ";" ;  print_space(); print_expression e2 
     | Ref e -> print_string "ref "; print_expression e
     | Deref e -> print_string "!"; print_expression e
-    | Assign (e1,e2) -> print_expression e1; " := "; print_expression e2
-    | Letrec(x,e1,e2) -> print_string ("letrec "^(Ident.name x)^" = "); print_expression e1; 
+    | Assign (e1,e2) -> print_expression e1; print_string ":="; print_expression e2
+    | Letrec(x,ty,e1,e2) -> print_string ("letrec "^(Ident.name x)^" : "); 
+      print_simple_type ty; print_string " = "; print_expression e1; 
       print_string " in "; print_expression e2
     | Unit -> print_string "unit"
 
@@ -213,7 +216,7 @@ struct
   and print_structure = function
     | Value_str (id,e) -> open_hvbox 2;
       print_string "val "; print_string(Ident.name id);
-      print_string " = "; print_expression e;
+      print_string " = "; open_hvbox 2; print_expression e; close_box();
       close_box()
     | Type_str (id,_,ty) -> open_hvbox 2;
       print_string "type "; print_string(Ident.name id);

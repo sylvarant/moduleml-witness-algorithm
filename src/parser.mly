@@ -69,6 +69,7 @@ let prim_ls arg1 arg2 = arg1 :: arg2 :: []
 %token LESSEQUAL
 %token LESSGREATER
 %token LET
+%token LETREC
 %token LPAREN
 %token MINUS
 %token MODULE
@@ -149,6 +150,7 @@ valexpr:
   | FUNCTION IDENT COLON simpletype EQUAL valexpr {MiniML.Function(Ident.create $2,$4,$6) } 
   | FUNCTION IDENT EQUAL valexpr {MiniML.Function(Ident.create $2,(MiniML.ignore_type),$4) } 
   | LET IDENT valbind IN valexpr      { MiniML.Let(Ident.create $2, $3, $5) }
+  | LETREC IDENT COLON simpletype EQUAL valexpr IN valexpr  { MiniML.Letrec(Ident.create $2, $4, $6, $8) }
   | IF valexpr THEN valexpr ELSE valexpr { MiniML.If( $2, $4, $6) }
   | FST valexpr {MiniML.Fst $2}
   | SND valexpr {MiniML.Snd $2}
@@ -314,4 +316,5 @@ alpha:
 traces:
   | DOLLAR                          { Traces.end_of_trace }
   | alpha DOUBLECOLON traces        { $1 :: $3 }
+  | alpha DOUBLECOLON               { $1 :: [] }
 

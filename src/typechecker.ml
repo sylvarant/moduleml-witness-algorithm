@@ -215,6 +215,14 @@ struct
         end_def();
         let _ = (Env.add_value ident (generalize type_arg) env) in
         let tt = infer_type (Env.add_value ident (generalize type_arg) env) body in tt
+      | Letrec (param, ty, arg, body) -> 
+        let quantifier = (trivial_scheme ty) in
+        begin_def();
+        let type_arg = infer_type (Env.add_value param quantifier env) arg in
+        end_def();
+        unify env ty type_arg;
+        let tt = infer_type (Env.add_value param (generalize type_arg) env) body in 
+        tt
       | Ref t1 -> let t1_type = infer_type env t1 in
         (ref_type t1_type)
       | Deref t1 -> let t1_type = infer_type env t1 in 
@@ -329,7 +337,7 @@ struct
       if is_rooted_at id path then begin
       try
         nondep_type env id (expand_manifest env path args)
-      with Cannot_TypeCheck Expansion ->
+      with Cannot_TypeCheck Expansion -> 
         raise Not_found
       end else
       Typeconstr(path, List.map (nondep_type env id) args)

@@ -38,6 +38,7 @@ let _ = List.iter (fun (str,tok) -> Hashtbl.add keyword_table str tok)
   "function", FUNCTION;
   "fun", FUNCTION;
   "let", LET;
+  "letrec", LETREC;
   "struct", STRUCT;
   "end", END;
   "functor", FUNCTOR;

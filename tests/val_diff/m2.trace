@@ -1,0 +1,3 @@
+
+call base ? :: ret true ! :: call Inner.diff ? :: ret 6 ! :: $
+
