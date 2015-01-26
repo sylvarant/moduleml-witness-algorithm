@@ -42,11 +42,11 @@ do
     fi
 
     name=${folder##*/}
-    printf "%s\n" "Testing :: $name"
+    printf "%s" "Testing :: $name "
     output="${Outfold}/${name}.ml"
 
     # test compilation and abort further tests if failed
-    echo ${folder}/m1.ml ${folder}/m2.ml ${folder}/m1.trace ${folder}/m2.trace $output
+    #echo ${folder}/m1.ml ${folder}/m2.ml ${folder}/m1.trace ${folder}/m2.trace $output
     $Builder ${folder}/m1.ml ${folder}/m2.ml ${folder}/m1.trace ${folder}/m2.trace $output 
     res=$?
     printr $res 0

@@ -49,7 +49,6 @@ let commandline =
  * =====================================================================================
  *)
 let parse_module file =
-  Printf.eprintf "Parsing module :: %s\n" file;
   let input = Pervasives.open_in file in
   let lexbuf = Lexing.from_channel input in
   let prog = Parser.implementation Lexer.token lexbuf in
@@ -65,7 +64,6 @@ let parse_module file =
  * =====================================================================================
  *)
 let parse_trace file =
-  Printf.eprintf "Parsing trace :: %s\n" file;
   let input = Pervasives.open_in file in
   let lexbuf = Lexing.from_channel input in
   let traces = Parser.traces Lexer.token lexbuf in
