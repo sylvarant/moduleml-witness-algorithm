@@ -30,10 +30,16 @@ exception AlgoException of string
  *  Types
  *-----------------------------------------------------------------------------*)
 
-type mcall = { path : Modules.path option ; step : int ; response : MiniML.term list }
-type combv = { path : Modules.path option ; content : MiniML.term }
-and  combt = { path : Modules.path; mutable strct : strct list }
-and  strct = Value of definition | Module of combt
+(* the traces are converted into a triple : path , stepnumber, actions taken  *)
+type action = { path : Modules.path option ; step : int ; actions : MiniML.term list }
+
+(* the actions are combined into implementations of module value members *)
+type comb_val = { path : Modules.path option ; content : MiniML.term }
+
+(* identify the tree structure of the module *)
+and comb_str = { path : Modules.path; mutable strct : member list }
+and member = Value of comb_val | Module of comb_str
+
 
 (*-----------------------------------------------------------------------------
  *  Helper functions
@@ -46,6 +52,9 @@ let rec convert_path = (function Pident id -> [Ident.name id]
 let rec convert_in = (function [x] -> Pident (Ident.create x) 
  | x :: xs -> let p = (convert_in xs) in Pdot (p,x)
  | _ -> raise (PathException "Cannot convert into Pdot"))
+
+(* hd that doesn't suck *)
+let hd = function [] -> None | x::xs -> Some x
 
 
 (*-----------------------------------------------------------------------------
@@ -107,14 +116,7 @@ struct
     let cont = (MiniML.Ref (Constant 0)) in
     Value_str(id,cont)
 
-  (* combine if statements for steps *)
-  let combine stp resp cont = 
-    let rec combo = function  [x] -> x
-      | x :: xs -> MiniML.Sequence(increment, MiniML.Let(Ident.create "x", x, (combo xs)))
-      | _ -> raise (AlgoException "Cannot combine empty list")
-    in
-    let comp = MiniML.Prim ("==",[deref;Constant stp]) in
-    MiniML.If (comp,(combo resp),cont)
+
     
 end
 
@@ -174,6 +176,15 @@ struct
     let comp = (MiniML.Prim ("==",[(Longident (Pident var));a])) in
     MiniML.If (comp,Diverge.diverge,Diverge.terminate)
 
+  (* combine if statements for steps *)
+  let combine_if stp resp cont = 
+    let rec combo = function  [x] -> x
+      | x :: xs -> (seq Steps.increment (make_let x (combo xs)))
+      | _ -> raise (AlgoException "Cannot combine empty list")
+    in
+    let comp = MiniML.Prim ("==",[Steps.deref;Constant stp]) in
+    MiniML.If (comp,(combo resp),cont)
+
 end
 
 
@@ -214,7 +225,7 @@ let rec diff_traces m1 m2 tr1 tr2 =
       let conv_path = (match pathls with
         | [] -> None
         | x :: xs -> Some x) in
-      { path = conv_path ; step = step; response = ls;}
+      { path = conv_path ; step = step; actions = ls;}
     in
     
     (* implement context action - always the same *)
@@ -235,18 +246,19 @@ let rec diff_traces m1 m2 tr1 tr2 =
       let other = match otheraction with
         | Exclamation x -> x
         | _ -> raise (TraceException "Mistake in final trace specification") in
-      let (npath,response) = (witness_action my) in
-      let quickrec p s = { path = Some p ; step = s ; response = [Diverge.terminate] } in
+      let (npath,action) = (witness_action my) in
+      let quickrec p s = { path = p ; step = s ; actions = [Diverge.terminate] } in
       let ends = match other with
-        | Ret t1 -> (quickrec (List.hd npath) step)
-        | Call (Longident p) -> (quickrec p (step+1)) in
-      (make_rec [response]) :: ends :: [] 
+        | Ret t1 -> (quickrec (hd npath) step)
+        | Call (Longident p) -> (quickrec (Some p) (step+1)) in
+      (make_rec [action]) :: ends :: [] 
     in
 
     (* capture the final tick *)
     let capture_action = function
       | Ret _ -> [make_rec [Diverge.diverge]]
-      | Call (Longident p) -> [{ path = Some p; step = (step +1); response = [Diverge.diverge]}]
+      | Call (Longident p) -> [{ path = Some p; step = (step +1); actions = [Diverge.diverge]}]
+      | Call Apply((Longident p),_) -> [{ path = Some p; step = (step +1); actions = [Diverge.diverge]}]
     in
 
     (* parse top level *)
@@ -261,23 +273,24 @@ let rec diff_traces m1 m2 tr1 tr2 =
       | (o::xs,[]) -> (final_module_action y o)
 
       (* respond and move on *)
-      | _ -> let (npath,response) = (witness_action x) in 
-        (make_rec [response]) :: (parse npath (step + 1) xs ys))
+      | _ -> let (npath,action) = (witness_action x) in 
+        (make_rec [action]) :: (parse npath (step + 1) xs ys))
 
     (* Module actions *)
     | ((Exclamation x)::xs,(Exclamation y)::ys) -> (match (x,y) with
       | (Ret a,Ret b) when a != b -> (make_rec [(Behaviour.compare a)]) :: []
       | (Ret _,Ret _) -> (parse pathls (step + 1) xs ys) 
       | (Call (Longident p1),Call (Longident p2)) when not (path_equal p1 p2) -> 
-        let call1 = { path = Some p1; step = step ; response = [Diverge.diverge]} 
-        and call2 = { path = Some p2; step = step ; response = [Diverge.terminate]} in
+        let call1 = { path = Some p1; step = step ; actions = [Diverge.diverge]} 
+        and call2 = { path = Some p2; step = step ; actions = [Diverge.terminate]} in
         call1 :: call2 :: []
       | (Call (Longident p),_) -> (parse (p :: pathls) (step + 1) xs ys)
-      | _ -> raise (AlgoException "Not implemented yet"))
+      | (Call a, Ret b) -> (make_rec [Diverge.terminate]) :: (capture_action x)
+      | (Ret a, Call b) -> (make_rec [Diverge.terminate]) :: (capture_action y))
 
     (* Ticks - if the module stops in one case but does not in the other  *)
-    | (Tick :: [], (Exclamation y)::[]) -> (capture_action y) 
-    | ((Exclamation x):: [], Tick::[]) -> (capture_action x) 
+    | (Tick :: [], (Exclamation y)::ys) -> (capture_action y) 
+    | ((Exclamation x)::xs, Tick::[]) -> (capture_action x) 
 
     (* Traces are off *)
     | _ -> raise (TraceException "Traces are wrong or not different")
@@ -300,8 +313,8 @@ let rec diff_traces m1 m2 tr1 tr2 =
       (* compare records *)
       let cmp_rec a b = match (a,b) with
         | ({path = None; step = s1; _},{path = None; step = s2; _}) -> (Pervasives.compare s1 s2)
-        | ({path = None; _},{path = Some p; _}) -> 1
-        | ({path = Some p; _},{path = None ; _}) -> (-1)
+        | ({path = None; _},{path = Some p; _}) -> -1
+        | ({path = Some p; _},{path = None ; _}) -> 1
         | ({path = Some p1; _},{path = Some p2; _}) -> let lp1 = convert_path p1
           and lp2 = convert_path p2 in
           if ((List.length lp1) == (List.length lp2))
@@ -312,70 +325,91 @@ let rec diff_traces m1 m2 tr1 tr2 =
     in
 
     (* compress the values *)
-    let rec compress_values current = function  [] -> [] 
-      | { path = None ; step = _; response = rep } :: xs ->  (match current with
-        | { path = None; content = con} ->  let sequ = (Behaviour.seq Steps.increment con) in
-          let ncon = (Behaviour.make_let sequ rep) in
-          compress_values { path = None; content = ncon } xs
-        | _ -> raise (AlgoException "Logic fail in value compression"))
-      | { path = Some p1 ; step = stp; response = rep } :: xs -> match current with
-        | { path = Some cp ; content = cont } -> 
-          if (path_equal p1 cp) 
-          then (compress_values {path = cp; content = (Steps.combine stp rep cont)} xs)
-          else current :: (compress_values {path = p1; content = rep} xs)
-        | { path = None ; content = cont } -> current :: (compress_values {path = p1; content = rep} xs)
+    let rec compress_values current ls = 
+      (* pump into compact format *)
+      let next ignore = ignore; match current with 
+        | { path = Some cp ; step = _; actions = [cont] } -> { path = Some cp; content = cont }
+        | { path = None ; step = _ ; actions = a } -> { path = None; content = (Behaviour.combine a) }
       in
+      match ls with [] -> [(next ())]
+      (* The main function  *)
+      | { path = None ; step = s; actions = rep } :: xs -> (match current with
+        | { path = None; step = _ ; actions = con} -> let nactions = (con @ rep) in
+          (compress_values { path = None; step = s; actions = nactions } xs)
+        | _ -> raise (AlgoException "Logic fail in value compression"))
 
-    (* I love side effects *)
-    let str_lst = ref [] in
+      (* targetted calls *)
+      | { path = Some p1 ; step = stp; actions = rep } :: xs -> 
+        (* helper to build new current *)
+        let ncurrent term = 
+            let nactions = [(Behaviour.combine_if stp rep term)] in
+            {path = Some p1; step = stp; actions = nactions}
+        in
+        match current with
+        | { path = Some cp ; step = _; actions = [cont] } -> 
+          if (path_equal p1 cp) 
+          then let ncurr = ncurrent cont in
+            (compress_values ncurr xs)
+          else let ncurr = ncurrent MiniML.Unit in 
+            (next ()) :: (compress_values ncurr xs)
+        (* close up the main function *)
+        | { path = None ; step = _ ; actions = a } -> 
+          let ncurr = ncurrent MiniML.Unit in
+          (next ()) :: (compress_values ncurr xs)
+      in
 
     (* compress the modules *)
     let rec compress_strct top = function [] -> []
       | x :: xs -> match x with 
-        | { path = None ; content = c } -> (Value (Value_str((Ident.create "main"),c))) :: (compress_strct xs)
-        | { path = Some (Pident i); content = c } -> (Value (Value_str(i,c))) :: (compress_strct xs)
+        | { path = None ; content = c } -> (Value x) :: (compress_strct top xs)
+        | { path = Some (Pident i); content = c } -> (Value x) :: (compress_strct top xs)
         | { path = Some p; content = c } -> let cp = (convert_path p) in
           (* to find a module *)
-          let pred_rec a b =  match (a,b) with
-            | ({path = p1; _},p2) -> (path_equal p1 p2)
+          let rec pred_rec a b =  
+            match (a,b) with
+            | (Module {path = p1; strct = ls },p2) -> if (not (path_equal p1 p2))
+              then (List.exists (fun x -> (pred_rec x b)) ls)
+              else true
+            | _ -> false
           in
           (* create the modules *)
           let rec create target elem = function
             | [x] -> let id = Ident.create x in
-              elem.strct <- ( (Value (Value_str(id,c)) ):: elem.strct) 
+              elem.strct <- ((Value {path = Some (Pident id); content = c}):: elem.strct) 
             | x::xs -> let pp = (convert_in (x::target)) in
-              let newelem = 
+              let Module newelem = 
                 try
-                  let found = (List.find (fun x -> (pred_rec x pp)) !str_lst) in 
+                  let found = (List.find (fun x -> (pred_rec x pp)) top.strct) in 
                   found 
-                with _ -> let found = { path = pp ; strct = [] } in 
+                with _ -> let found = Module { path = pp ; strct = [] } in 
                   match target with
-                  | [] -> str_lst := (Module found) :: !str_lst; found
-                  | _ -> elem.strct <- (Module found) :: elem.strct; found
+                  | [] -> top.strct <- found :: top.strct; found
+                  | _ -> elem.strct <- found :: elem.strct; found
               in 
               (create (x::target) newelem xs)
           in
-          (create [] top); 
-          (compress_strct xs)
+          (create [] top (List.rev cp)); 
+          (compress_strct top xs)
     in
 
     (* clean up compression to produces nice modules *) 
     let rec clean = function [] -> []
       | x :: xs -> match x with
-        | Value v ->  v :: (clean xs)
+        | Value { path = None; content = c}  -> (Value_str((Ident.create "main"),c)) :: (clean xs)
+        | Value { path = Some (Pident i); content = c} -> Value_str(i,c) :: (clean xs)
         | Module {path = p; strct = ls } -> let id = (match p with
           | Pident i -> i
-          | Path (pp,i) -> (Ident.create i)) in
+          | Pdot (_,i) -> (Ident.create i)) in
           let defs = (clean ls) in
-          Module_str(id,defs) :: (clean xs)
+          Module_str(id,(Structure defs)) :: (clean xs)
     in
 
     (* top level compress *)
-    let coms = compress_values (sort_ls ls) in
+    let coms = compress_values { path = None; step = 0 ; actions = []} (sort_ls ls) in
     let dummy = {path = Pident (Ident.create "M"); strct = []} in
     let vlist = compress_strct dummy coms in
     let result = (clean vlist) @ (clean dummy.strct) in
-    results
+    result
  in
 
  (*-----------------------------------------------------------------------------
@@ -383,7 +417,7 @@ let rec diff_traces m1 m2 tr1 tr2 =
   *-----------------------------------------------------------------------------*)
    
   let setup = [Interaction.open_m; Steps.value ; Diverge.value] 
-  and strls = (compress (parse tr1 tr2)) in
+  and strls = (compress (parse [] 0 tr1 tr2)) in
   let main = List.hd strls in
   let comm = List.tl strls in
   (Structure (comm @ setup @ [main]))

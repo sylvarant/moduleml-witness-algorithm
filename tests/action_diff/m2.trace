@@ -1,0 +1,4 @@
+
+call base ? :: ret true ! :: call (Inner.diff (fun x = (test x)))  ? 
+:: call test 4 ! :: $
+
