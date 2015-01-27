@@ -161,11 +161,12 @@ struct
       (print_expression e1); print_string ",";
       (print_expression e2); print_string")"
     | Function (id,ty,e) -> print_string "(fun "; print_string (Ident.name id);
-      print_string " -> "; print_expression e; print_string ")"
+      print_string " : "; print_simple_type ty;
+      print_string " = "; print_expression e; print_string ")"
     | Apply (e1,e2) -> print_string "("; print_expression e1; print_string " ";
       print_expression e2; print_string ")"
     | If (e1,e2,e3) -> print_string "(if "; print_expression e1; print_string "then "; 
-      print_expression e2; print_string "else "; print_expression e3; print_string ")"
+      print_expression e2; print_string " else "; print_expression e3; print_string ")"
     | Let (x,e1,e2) -> print_string ("(let "^(Ident.name x)^" = "); print_expression e1; 
       print_string " in "; print_expression e2; print_string ")"
     | Prim (x,ls) -> print_string ("("^x); 

@@ -30,8 +30,11 @@ exception AlgoException of string
  *  Types
  *-----------------------------------------------------------------------------*)
 
-(* the traces are converted into a triple : path , stepnumber, actions taken  *)
-type action = { path : Modules.path option ; step : int ; actions : MiniML.term list }
+(* a function is a module path and has a certain argument count *)
+type func = { path : Modules.path ; types : MiniML.simple_type list }
+
+(* the traces are converted into a triple : function, stepnumber, actions taken  *)
+type action = { func : func option ; step : int ; actions : MiniML.term list }
 
 (* the actions are combined into implementations of module value members *)
 type comb_val = { path : Modules.path option ; content : MiniML.term }
@@ -58,7 +61,7 @@ let hd = function [] -> None | x::xs -> Some x
 
 
 (*-----------------------------------------------------------------------------
- *  Module that deals with the interaction
+ *  Module that deals with the interaction between M and the witness
  *-----------------------------------------------------------------------------*)
 module Interaction =
 struct
@@ -116,8 +119,6 @@ struct
     let cont = (MiniML.Ref (Constant 0)) in
     Value_str(id,cont)
 
-
-    
 end
 
 
@@ -149,7 +150,7 @@ end
 
 
 (*-----------------------------------------------------------------------------
- *  Module that handles the module behaviour 
+ *  Module that handles the witness behaviour 
  *-----------------------------------------------------------------------------*)
 module Behaviour =
 struct
@@ -182,8 +183,14 @@ struct
       | x :: xs -> (seq Steps.increment (make_let x (combo xs)))
       | _ -> raise (AlgoException "Cannot combine empty list")
     in
-    let comp = MiniML.Prim ("==",[Steps.deref;Constant stp]) in
-    MiniML.If (comp,(combo resp),cont)
+    let comp = MiniML.Prim ("==",[Steps.deref;Constant (stp - 1)]) in
+    (seq Steps.increment (MiniML.If (comp,(combo resp),cont)))
+
+  (* make a function*)
+  let rec make_f t = function
+    | [] -> t
+    | ty::tys -> let var = Ident.create "y" in
+      (make_f (MiniML.Function (var,ty,t)) tys)
 
 end
 
@@ -222,10 +229,7 @@ let rec diff_traces m1 m2 tr1 tr2 =
 
     (* to make things easier *)
     let make_rec ls =  
-      let conv_path = (match pathls with
-        | [] -> None
-        | x :: xs -> Some x) in
-      { path = conv_path ; step = step; actions = ls;}
+      {func = (hd pathls) ; step = step; actions = ls;}
     in
     
     (* implement context action - always the same *)
@@ -241,24 +245,34 @@ let rec diff_traces m1 m2 tr1 tr2 =
       | Call x -> (pathls, (parse_call x))
     in
 
+    (* module call parse : path & count *)
+    let rec mod_call tyls = function
+      | MiniML.Longident p -> Some { path = p; types = tyls }
+      | MiniML.Apply(x,y) -> 
+        let typ = (MiniMLTyping.type_term MiniMLEnv.empty y) in
+        (mod_call (typ.body::tyls) x )
+    in
+
     (* deal with the final module action in different length trace *)
     let final_module_action my otheraction  =
       let other = match otheraction with
         | Exclamation x -> x
         | _ -> raise (TraceException "Mistake in final trace specification") in
       let (npath,action) = (witness_action my) in
-      let quickrec p s = { path = p ; step = s ; actions = [Diverge.terminate] } in
+      let quickrec f s = { func = f;step = s ; actions = [Diverge.terminate] } in
       let ends = match other with
         | Ret t1 -> (quickrec (hd npath) step)
-        | Call (Longident p) -> (quickrec (Some p) (step+1)) in
+        | Call y -> let f = (mod_call [] y) in 
+          (quickrec f (step+1)) 
+      in
       (make_rec [action]) :: ends :: [] 
     in
 
     (* capture the final tick *)
     let capture_action = function
       | Ret _ -> [make_rec [Diverge.diverge]]
-      | Call (Longident p) -> [{ path = Some p; step = (step +1); actions = [Diverge.diverge]}]
-      | Call Apply((Longident p),_) -> [{ path = Some p; step = (step +1); actions = [Diverge.diverge]}]
+      | Call x -> let f = (mod_call [] x) in
+        [{ func = f; step = (step +1); actions = [Diverge.diverge]}]
     in
 
     (* parse top level *)
@@ -280,11 +294,14 @@ let rec diff_traces m1 m2 tr1 tr2 =
     | ((Exclamation x)::xs,(Exclamation y)::ys) -> (match (x,y) with
       | (Ret a,Ret b) when a != b -> (make_rec [(Behaviour.compare a)]) :: []
       | (Ret _,Ret _) -> (parse pathls (step + 1) xs ys) 
-      | (Call (Longident p1),Call (Longident p2)) when not (path_equal p1 p2) -> 
-        let call1 = { path = Some p1; step = step ; actions = [Diverge.diverge]} 
-        and call2 = { path = Some p2; step = step ; actions = [Diverge.terminate]} in
-        call1 :: call2 :: []
-      | (Call (Longident p),_) -> (parse (p :: pathls) (step + 1) xs ys)
+      | (Call a,Call b) -> let Some f1 = (mod_call [] a)
+        and Some f2 = (mod_call [] b) in
+        (match (f1,f2) with
+        | ({path = p1;_},{path = p2;_}) when not (path_equal p1 p2) ->
+          let call1 = { func = Some f1; step = step ; actions = [Diverge.diverge]} 
+          and call2 = { func = Some f2; step = step ; actions = [Diverge.terminate]} in
+          call1 :: call2 :: []
+        | _ -> (parse (f1 :: pathls) (step + 1) xs ys))
       | (Call a, Ret b) -> (make_rec [Diverge.terminate]) :: (capture_action x)
       | (Ret a, Call b) -> (make_rec [Diverge.terminate]) :: (capture_action y))
 
@@ -312,10 +329,10 @@ let rec diff_traces m1 m2 tr1 tr2 =
 
       (* compare records *)
       let cmp_rec a b = match (a,b) with
-        | ({path = None; step = s1; _},{path = None; step = s2; _}) -> (Pervasives.compare s1 s2)
-        | ({path = None; _},{path = Some p; _}) -> -1
-        | ({path = Some p; _},{path = None ; _}) -> 1
-        | ({path = Some p1; _},{path = Some p2; _}) -> let lp1 = convert_path p1
+        | ({func = None; step = s1; _},{func= None; step = s2; _}) -> (Pervasives.compare s1 s2)
+        | ({func = None; _},{func = Some {path = p; _}; _}) -> -1
+        | ({func = Some {path = p;_}; _},{func = None; _}) -> 1
+        | ({func = Some {path = p1;_}; _},{func = Some {path = p2;_}; _}) -> let lp1 = convert_path p1
           and lp2 = convert_path p2 in
           if ((List.length lp1) == (List.length lp2))
           then (String.compare (make_str lp1) (make_str lp2))
@@ -328,32 +345,36 @@ let rec diff_traces m1 m2 tr1 tr2 =
     let rec compress_values current ls = 
       (* pump into compact format *)
       let next ignore = ignore; match current with 
-        | { path = Some cp ; step = _; actions = [cont] } -> { path = Some cp; content = cont }
-        | { path = None ; step = _ ; actions = a } -> { path = None; content = (Behaviour.combine a) }
+        | { func = Some {path = cp; types = tys }; step = _; actions = [cont] } -> 
+          { path = Some cp; content = (Behaviour.make_f cont tys) }
+        | { func = None; step = _ ; actions = a } -> 
+          { path = None; content = (Behaviour.make_f (Behaviour.combine a) []) }
       in
       match ls with [] -> [(next ())]
+
       (* The main function  *)
-      | { path = None ; step = s; actions = rep } :: xs -> (match current with
-        | { path = None; step = _ ; actions = con} -> let nactions = (con @ rep) in
-          (compress_values { path = None; step = s; actions = nactions } xs)
-        | _ -> raise (AlgoException "Logic fail in value compression"))
+      | { func = None; step = s; actions = rep } :: xs -> 
+        (match current with
+          | { func = None; step = _ ; actions = con} -> let nactions = (con @ rep) in
+            (compress_values { func = current.func; step = s; actions = nactions } xs)
+          | _ -> raise (AlgoException "Logic fail in value compression"))
 
       (* targetted calls *)
-      | { path = Some p1 ; step = stp; actions = rep } :: xs -> 
+      | { func = Some{path = p1; types = tyls}; step = stp; actions = rep } :: xs -> 
         (* helper to build new current *)
         let ncurrent term = 
             let nactions = [(Behaviour.combine_if stp rep term)] in
-            {path = Some p1; step = stp; actions = nactions}
+            {func= Some{path = p1; types = tyls}; step = stp; actions = nactions}
         in
         match current with
-        | { path = Some cp ; step = _; actions = [cont] } -> 
+        | { func = Some{ path = cp ; _}; step = _; actions = [cont] } -> 
           if (path_equal p1 cp) 
           then let ncurr = ncurrent cont in
             (compress_values ncurr xs)
           else let ncurr = ncurrent MiniML.Unit in 
             (next ()) :: (compress_values ncurr xs)
         (* close up the main function *)
-        | { path = None ; step = _ ; actions = a } -> 
+        | { func = None; step = _ ; actions = a } -> 
           let ncurr = ncurrent MiniML.Unit in
           (next ()) :: (compress_values ncurr xs)
       in
@@ -405,7 +426,7 @@ let rec diff_traces m1 m2 tr1 tr2 =
     in
 
     (* top level compress *)
-    let coms = compress_values { path = None; step = 0 ; actions = []} (sort_ls ls) in
+    let coms = compress_values { func = None; step = 0 ; actions = []} (sort_ls ls) in
     let dummy = {path = Pident (Ident.create "M"); strct = []} in
     let vlist = compress_strct dummy coms in
     let result = (clean vlist) @ (clean dummy.strct) in
