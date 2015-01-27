@@ -81,6 +81,14 @@ let prim_ls arg1 arg2 = arg1 :: arg2 :: []
 %token EXCLAMATION
 %token QUESTION
 %token DOUBLECOLON
+%token IDENTIFIER
+%token REGULAR
+%token DYNAMIC
+%token APPLCLO
+%token APPLFUN
+%token APPLLOC
+%token NEWPATH
+%token LOC
 %token DOTEQUAL
 %token DOLLAR
 %token CALL
@@ -300,10 +308,26 @@ implementation:
 /*    Trace Parsing                */
 /*=================================*/
 
+/* parse returns */
+return:
+  | IDENTIFIER INT                  {Traces.Identifier $2} 
+  | VALUE valexpr                   {Traces.Value $2}
+  | LOC INT                         {Traces.Ref $2} 
+  | NEWPATH path                    {Traces.Newpath $2} 
+
+
+entry:
+  | REGULAR valexpr                 {Traces.Regular $2}
+  | DYNAMIC valexpr                 {Traces.Dynamic $2}
+  | APPLCLO INT valexpr             {Traces.ApplyCl($2,$3)}
+  | APPLFUN path path               {Traces.ApplyFu($2,$3)}
+  | APPLLOC INT                     {Traces.ApplyLoc $2}
+
+
 /* parse actions */
 action:
-  | CALL valexpr                    {Traces.Call $2}
-  | RET valexpr                     {Traces.Ret $2}
+  | CALL entry                      {Traces.Call $2}
+  | RET return                      {Traces.Ret $2}
 
 
 /* parse alpha's */

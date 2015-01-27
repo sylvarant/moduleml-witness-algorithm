@@ -43,6 +43,14 @@ let _ = List.iter (fun (str,tok) -> Hashtbl.add keyword_table str tok)
   "end", END;
   "functor", FUNCTOR;
   "val", VALUE;
+  "id", IDENTIFIER;
+  "reg", REGULAR;
+  "dyn", DYNAMIC;
+  "acl", APPLCLO;
+  "afu", APPLFUN;
+  "alo", APPLLOC;
+  "npth",NEWPATH;
+  "lid", LOC;
   "type", TYPE;
   "module", MODULE;
   "open", OPEN;

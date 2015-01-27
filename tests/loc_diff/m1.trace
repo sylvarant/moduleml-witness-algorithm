@@ -1,0 +1,4 @@
+
+call reg loc ? :: ret lid 1 ! :: 
+call alo 1 ? :: ret val 6 ! :: $
+

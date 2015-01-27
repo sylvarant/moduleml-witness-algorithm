@@ -1,0 +1,4 @@
+
+call reg base ? :: ret id 1 ! :: 
+call acl 1 true ? :: ret val false ! :: $
+

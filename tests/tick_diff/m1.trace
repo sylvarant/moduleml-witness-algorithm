@@ -1,3 +1,3 @@
 
-call loopy ? :: ret true ! :: $
+call reg loopy ? :: ret val true ! :: $
 

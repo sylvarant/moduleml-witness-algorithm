@@ -1,0 +1,4 @@
+
+call afu Fctr Inner ? :: ret npth New ! :: 
+call dyn New.fcall ? :: ret val false ! :: $
+

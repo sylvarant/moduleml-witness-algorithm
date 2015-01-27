@@ -16,6 +16,7 @@ open Modules
 open MiniMLMod
 open Typechecker
 open Traces
+open Printer
 
 (*-----------------------------------------------------------------------------
  *  Exceptions
@@ -42,6 +43,9 @@ type comb_val = { path : Modules.path option ; content : MiniML.term }
 (* identify the tree structure of the module *)
 and comb_str = { path : Modules.path; mutable strct : member list }
 and member = Value of comb_val | Module of comb_str
+
+(* the functor calls *)
+type funccall = { mutable name : Modules.path option; cont : MiniMLMod.mod_term }
 
 
 (*-----------------------------------------------------------------------------
@@ -169,7 +173,9 @@ struct
   (* combine the actions *)
   let rec combine = function
     | [x] -> x
-    | x :: xs -> (seq Steps.increment (make_let x (combine xs)))
+    | x :: xs -> (match x with
+      | MiniML.Let (v,a,b) -> MiniML.Let(v,a,(combine xs))
+      | _ -> (seq Steps.increment (make_let x (combine xs))))
     | _ -> raise (AlgoException "Cannot combine empty list")
 
   (* compare ret's *)
@@ -205,7 +211,7 @@ let diff_types ty1 ty2 =
   try
     (MiniMLModTyping.modtype_match MiniMLEnv.empty ty1 ty2);
     None
-  with _ -> 
+  with Error s -> 
     let ident = Ident.create "X" 
     and aident = Ident.create "Break" in
     let functr =  Functor (ident,ty1,Longident (Pident ident)) in
@@ -221,6 +227,9 @@ let diff_types ty1 ty2 =
  * =====================================================================================
  *)
 let rec diff_traces m1 m2 tr1 tr2 = 
+
+  (* feed me side effects *)
+  let fctr_ls = ref [] in
 
  (*-----------------------------------------------------------------------------
   *  parse the different traces
@@ -241,16 +250,44 @@ let rec diff_traces m1 m2 tr1 tr2 =
         | _ -> raise (TraceException "Mistake in trace specification") 
       in
       match a with
-      | Ret t1 -> ((List.tl pathls),t1) 
-      | Call x -> (pathls, (parse_call x))
+      | Ret (Value t1) -> ((List.tl pathls),t1) 
+      | Call (Regular x) -> (pathls, (parse_call x))
+      | Call (Dynamic x) -> (pathls, (parse_call x))
+      | Call (ApplyLoc id) -> let var = Pident (Ident.create ("ref"^(string_of_int id))) in
+        let nv = MiniML.Longident var in
+        (pathls, (MiniML.Deref nv))
+      | Call (ApplyCl (id,x)) -> let var = Pident (Ident.create ("id"^(string_of_int id))) in
+        let appl = MiniML.Apply((MiniML.Longident var),x) in
+        ( pathls,appl)
+      | Call (ApplyFu (p1,p2)) -> let app = MiniMLMod.Apply((MiniMLMod.Longident p1),(MiniMLMod.Longident p2)) in
+        let fc = { name = None; cont = app } in
+        fctr_ls := fc :: !fctr_ls;
+        (pathls,MiniML.Unit)
+      | _ -> raise (TraceException "Mistake in trace specification")
     in
 
     (* module call parse : path & count *)
     let rec mod_call tyls = function
-      | MiniML.Longident p -> Some { path = p; types = tyls }
-      | MiniML.Apply(x,y) -> 
-        let typ = (MiniMLTyping.type_term MiniMLEnv.empty y) in
-        (mod_call (typ.body::tyls) x )
+      | Regular r -> (match r with
+        | MiniML.Longident p -> Some { path = p; types = tyls }
+        | MiniML.Apply(x,y) -> 
+          let typ = (MiniMLTyping.type_term MiniMLEnv.empty y) in
+          (mod_call (typ.body::tyls) (Regular x) ))
+      | _ -> raise (TraceException "Module cannot call preset entries")
+    in
+
+    (* module return *)
+    let rec mod_ret = function
+      | Traces.Value t -> None
+      | Traces.Identifier id -> let var = (Ident.create ("id"^(string_of_int id))) 
+        and nvar = MiniML.Longident (Pident (Ident.create "x")) in
+        Some (MiniML.Let(var,nvar,MiniML.Unit))
+      | Traces.Ref id -> let var = (Ident.create ("ref"^(string_of_int id))) 
+        and nvar = MiniML.Longident (Pident (Ident.create "x")) in
+        Some (MiniML.Let(var,nvar,MiniML.Unit))
+      | Traces.Newpath p -> let fc = List.hd !fctr_ls in
+        fc.name <- (Some p);
+        None
     in
 
     (* deal with the final module action in different length trace *)
@@ -261,7 +298,7 @@ let rec diff_traces m1 m2 tr1 tr2 =
       let (npath,action) = (witness_action my) in
       let quickrec f s = { func = f;step = s ; actions = [Diverge.terminate] } in
       let ends = match other with
-        | Ret t1 -> (quickrec (hd npath) step)
+        | Ret _ -> (quickrec (hd npath) step)
         | Call y -> let f = (mod_call [] y) in 
           (quickrec f (step+1)) 
       in
@@ -292,8 +329,10 @@ let rec diff_traces m1 m2 tr1 tr2 =
 
     (* Module actions *)
     | ((Exclamation x)::xs,(Exclamation y)::ys) -> (match (x,y) with
-      | (Ret a,Ret b) when a != b -> (make_rec [(Behaviour.compare a)]) :: []
-      | (Ret _,Ret _) -> (parse pathls (step + 1) xs ys) 
+      | (Ret (Value a),Ret (Value b)) when a != b -> (make_rec [(Behaviour.compare a)]) :: []
+      | (Ret a,Ret _) -> (match (mod_ret a) with
+          | None -> (parse pathls (step + 1) xs ys) 
+          | Some t -> (make_rec [t]) :: (parse pathls (step + 1) xs ys))
       | (Call a,Call b) -> let Some f1 = (mod_call [] a)
         and Some f2 = (mod_call [] b) in
         (match (f1,f2) with
@@ -439,9 +478,10 @@ let rec diff_traces m1 m2 tr1 tr2 =
    
   let setup = [Interaction.open_m; Steps.value ; Diverge.value] 
   and strls = (compress (parse [] 0 tr1 tr2)) in
+  let fcalls = List.map (function { name = Some (Pident n); cont = c} -> Module_str(n,c)) !fctr_ls in
   let main = List.hd strls in
   let comm = List.tl strls in
-  (Structure (comm @ setup @ [main]))
+  (Structure (comm @ setup @ fcalls @ [main]))
 
 
 (* 
