@@ -64,7 +64,6 @@ let parse_module file =
  * =====================================================================================
  *)
 let parse_trace file =
-  Printf.eprintf "Trace\n";
   let input = Pervasives.open_in file in
   let lexbuf = Lexing.from_channel input in
   let traces = Parser.traces Lexer.token lexbuf in

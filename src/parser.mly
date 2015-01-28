@@ -320,7 +320,8 @@ entry:
   | REGULAR valexpr                 {Traces.Regular $2}
   | DYNAMIC valexpr                 {Traces.Dynamic $2}
   | APPLCLO INT valexpr             {Traces.ApplyCl($2,$3)}
-  | APPLFUN path path               {Traces.ApplyFu($2,$3)}
+  | APPLFUN path path               {Traces.ApplyFu($2,Traces.Known $3)}
+  | APPLFUN path INT                {Traces.ApplyFu($2,Traces.New $3)}
   | APPLLOC INT                     {Traces.ApplyLoc $2}
 
 

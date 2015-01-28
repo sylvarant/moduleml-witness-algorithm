@@ -31,7 +31,7 @@ exception AlgoException of string
  *  Types
  *-----------------------------------------------------------------------------*)
 
-(* a function is a module path and has a certain argument count *)
+(* a function is a module path and has a set of argument types and a return type *)
 type func = { path : Modules.path ; types : MiniML.simple_type list }
 
 (* the traces are converted into a triple : function, stepnumber, actions taken  *)
@@ -60,8 +60,38 @@ let rec convert_in = (function [x] -> Pident (Ident.create x)
  | x :: xs -> let p = (convert_in xs) in Pdot (p,x)
  | _ -> raise (PathException "Cannot convert into Pdot"))
 
-(* hd that doesn't suck *)
+(* an hd that doesn't suck *)
 let hd = function [] -> None | x::xs -> Some x
+
+
+(*-----------------------------------------------------------------------------
+ *  store path type associations (In the future update to objects)
+ *-----------------------------------------------------------------------------*)
+module PathTbl =
+struct
+
+  (* a table is a simple list of tuples *)
+  let emptytbl = []
+
+  (* compare paths *)
+  let equal p1 p2 = (path_equal p1 p2)
+
+  (* add *)
+  let add (p : Modules.path) (data : MiniML.simple_type) tbl = (p, data) :: tbl
+
+  (* find a pth *)
+  let rec find p1 = function
+    | [] -> raise Not_found
+    | (p2,data) :: xs -> if equal p1 p2 
+      then data
+      else (find p1 xs)
+
+  (* search until you have a base *)
+  let rec findbase p1 tbl = match (find p1 tbl) with
+    | MiniML.LambdaType _ as ty -> ty
+    | MiniML.Typeconstr(p2,_) -> (findbase p2 tbl)
+
+end
 
 
 (*-----------------------------------------------------------------------------
@@ -165,6 +195,23 @@ struct
 
   let make_let a b = MiniML.Let(var,a,b)
 
+  (* produce a default value for each type *)
+  let default_val ptbl ty = 
+    let rec convert = function
+      | MiniML.LambdaType(TBool,[]) -> MiniML.Boolean true
+      | MiniML.LambdaType(TUnit,[]) -> MiniML.Unit
+      | MiniML.LambdaType(TInt,[]) -> MiniML.Constant 0
+      | MiniML.LambdaType(TRef,[ty]) -> MiniML.Ref (convert ty)
+      | MiniML.LambdaType(TIgnore,[]) -> MiniML.Unit (* Todo this is deprecated *)
+      | MiniML.LambdaType(TPair,[ty1;ty2]) -> MiniML.Pair(convert ty1,convert ty2)
+      | MiniML.LambdaType(TArrow,[ty1;ty2]) -> MiniML.Function(var,ty1,convert ty2)
+      | MiniML.Typeconstr(path,_) -> convert (PathTbl.findbase path ptbl)
+    in
+    (convert ty)
+
+  (* default implementation of abstract type *)
+  let def_absty = MiniML.LambdaType(TInt,[])
+
   (* create main function *)
   let main x =
     let id = Ident.create "main" in
@@ -200,11 +247,10 @@ struct
 
 end
 
-
 (* 
  * ===  FUNCTION  ======================================================================
  *         Name:  diff_types
- *  Description:  build Some witness if the types or different 
+ *  Description:  build a witness if the types or different 
  * =====================================================================================
  *)
 let diff_types ty1 ty2 =
@@ -222,14 +268,79 @@ let diff_types ty1 ty2 =
 
 (* 
  * ===  FUNCTION  ======================================================================
+ *     Name: find_argtype
+ *  Description: find a functors argument type  
+ * =====================================================================================
+ *)
+let rec find_argtype ty path = 
+
+  (* build a dummy module that the outside can apply to the module *)
+  let build_dummy mty =
+
+    (* side affects all around *)
+    let ptbl = ref PathTbl.emptytbl in
+
+    (* convert a signature into a sequence of modules *)
+    let rec convert = function [] -> []
+      | x :: xs -> (match x with
+        | Value_sig (id,vty) -> Value_str(id,(Behaviour.default_val !ptbl vty.body)) 
+        | Type_sig (id,decl) -> let nty = (match decl.manifest with
+          | None -> Behaviour.def_absty
+          | Some dft -> dft.defbody) in
+          ptbl := PathTbl.add (Pident id) nty !ptbl;
+          let dty = { MiniML.params = []; MiniML.defbody = nty }
+          and knd = { MiniML.arity = 0} in
+          Type_str(id,knd,dty)
+        | Module_sig (id,mty) -> Module_str(id,convertm mty)) :: (convert xs)
+    
+    and convertm = function
+      | Signature sls -> let strs = convert sls in (Structure strs)
+      | _ -> raise (TraceException "Cannot apply outside functor to the module")
+    in
+    (convertm mty)
+  in
+    
+
+  (* extract the functor arg *) 
+  let extract = function
+    | Functor_type (_,ml1,_) -> ml1
+    | _ -> raise (PathException "Wrong type path: points to module")
+  in
+
+  (* find a string in a mod_type *)
+  let rec find str mty = 
+    (* find the type declaration *)
+    let rec find_decl = function [] -> raise (PathException "Cannot find type path")
+      | x::xs -> match x with
+        | Value_sig(id, vty) when (Ident.name id) = str -> raise (PathException "Wrong type path: points to val")
+        | Type_sig(id, decl) when (Ident.name id) = str -> raise (PathException "Wrong type path: points to type decl")
+        | Module_sig(id,mty) when (Ident.name id) = str -> mty
+        | _ ->  (find_decl xs)
+    in
+    match mty with 
+      | Signature sls -> (find_decl sls)
+      | Functor_type(arg,ml1,_) -> raise (PathException "Functor search not supported")
+  in
+
+  (* top level *)
+  let process typ = build_dummy (extract typ) in
+  match path with | [] -> (process ty)
+    | str :: [] -> (process (find str ty))
+    | str :: ls -> let mty = (find str ty) in
+      (find_argtype mty ls)
+
+
+(* 
+ * ===  FUNCTION  ======================================================================
  *         Name:  diff_traces
  *  Description:  find the difference between the traces and defer as needed
  * =====================================================================================
  *)
-let rec diff_traces m1 m2 tr1 tr2 = 
+let rec diff_traces ty m1 m2 tr1 tr2 = 
 
   (* feed me side effects *)
-  let fctr_ls = ref [] in
+  let fctr_ls = ref [] 
+  and modstr_ls = ref [] in
 
  (*-----------------------------------------------------------------------------
   *  parse the different traces
@@ -259,7 +370,15 @@ let rec diff_traces m1 m2 tr1 tr2 =
       | Call (ApplyCl (id,x)) -> let var = Pident (Ident.create ("id"^(string_of_int id))) in
         let appl = MiniML.Apply((MiniML.Longident var),x) in
         ( pathls,appl)
-      | Call (ApplyFu (p1,p2)) -> let app = MiniMLMod.Apply((MiniMLMod.Longident p1),(MiniMLMod.Longident p2)) in
+      | Call (ApplyFu (p1,opt)) -> 
+        let arg = match opt with
+          | Known p2 -> p2
+          | New i -> let id = Ident.create ("Witn"^(string_of_int i))
+            and mt = (find_argtype ty (convert_path p1)) in
+            modstr_ls := Module_str(id,mt) :: !modstr_ls;
+            (Pident id)
+        in
+        let app = MiniMLMod.Apply((MiniMLMod.Longident p1),(MiniMLMod.Longident arg)) in
         let fc = { name = None; cont = app } in
         fctr_ls := fc :: !fctr_ls;
         (pathls,MiniML.Unit)
@@ -269,9 +388,9 @@ let rec diff_traces m1 m2 tr1 tr2 =
     (* module call parse : path & count *)
     let rec mod_call tyls = function
       | Regular r -> (match r with
-        | MiniML.Longident p -> Some { path = p; types = tyls }
+        | MiniML.Longident p -> Some { path = p; types = tyls;  }
         | MiniML.Apply(x,y) -> 
-          let typ = (MiniMLTyping.type_term MiniMLEnv.empty y) in
+          let typ = (MiniMLTyping.type_term MiniMLEnv.empty y) in (* improve env *)
           (mod_call (typ.body::tyls) (Regular x) ))
       | _ -> raise (TraceException "Module cannot call preset entries")
     in
@@ -481,7 +600,7 @@ let rec diff_traces m1 m2 tr1 tr2 =
   let fcalls = List.map (function { name = Some (Pident n); cont = c} -> Module_str(n,c)) !fctr_ls in
   let main = List.hd strls in
   let comm = List.tl strls in
-  (Structure (comm @ setup @ fcalls @ [main]))
+  (Structure (!modstr_ls @ comm @ setup @ fcalls @ [main]))
 
 
 (* 
@@ -504,6 +623,6 @@ let build mt1 mt2 tr1 tr2 =
   let case1 = (diff_types ty1 ty2) in
   match case1 with
   | Some x -> x
-  | None -> (diff_traces m1 m2 tr1 tr2) 
+  | None -> (diff_traces ty1 m1 m2 tr1 tr2) 
   
 

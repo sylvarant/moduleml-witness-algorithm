@@ -18,11 +18,13 @@ open MiniMLMod
  *  Traces
  *-----------------------------------------------------------------------------*)
 
-type entry =
+type designation = Known of Modules.path | New of int
+
+type entry = 
   | Regular of MiniML.term
   | Dynamic of MiniML.term
   | ApplyCl of int * MiniML.term
-  | ApplyFu of Modules.path * Modules.path
+  | ApplyFu of Modules.path * designation
   | ApplyLoc of int
 
 type return =
