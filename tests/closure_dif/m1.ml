@@ -1,6 +1,6 @@
 struct
 
-   val base x = (fun y = false) 
+   val base = (fun y = false) 
 
 end
 
