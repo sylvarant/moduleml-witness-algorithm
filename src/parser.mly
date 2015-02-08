@@ -6,8 +6,8 @@
  *    Description:  Parser for MiniML ML based on Leroy's parser for miniML
  *   Extension of:  Xavier Leroy's modular Modules implementation
  *
- *         Author:  Adriaan Larmuseau, ajhl
- *        Company:  uppsala
+ *         Author:  MYSTERY MAN, 
+ *        Company:  SOMEWHERE
  *
  * =====================================================================================
  */
@@ -253,7 +253,7 @@ modulexpr:
   | modulexpr LPAREN modulexpr RPAREN { MiniMLMod.Apply($1, $3) }
   | LPAREN modulexpr RPAREN           { $2 }
   | modulexpr COLON moduletype        { MiniMLMod.Constraint($1, $3) }
-/*  | valexpr                           { MiniMLMod.Expression $1 }  Adriaan */
+/*  | valexpr                           { MiniMLMod.Expression $1 }   */
 ;
 structure:
     /*nothing*/                       { [] }

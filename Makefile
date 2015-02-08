@@ -1,6 +1,6 @@
 #########################################
 #     Custom MakeFile                   #
-# By Adriaan Larmuseau                  #
+# By MYSTERY MAN                  #
 #########################################
 
 OUTPUT_DIR = bin
@@ -29,6 +29,6 @@ test:
 clean:
 	$(MAKE) clean -C $(COMPILER_DIR)
 	rm -fr witnesses/*
-	
+
 
 .PHONY: test setup compiler clean now

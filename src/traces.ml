@@ -5,8 +5,8 @@
  *
  *   Description:  traces spec
  *
- *        Author:  Adriaan Larmuseau, ajhl
- *       Company:  Uppsala IT
+ *        Author:  MYSTERY MAN, 
+ *       Company:  SOMEWHERE IT
  *
  * =====================================================================================
  *)
