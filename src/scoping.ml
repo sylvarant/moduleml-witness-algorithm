@@ -50,6 +50,7 @@ struct
        Let(id, scope_term sc t1,scoped_t2)
    | If (t1,t2,t3) -> If(scope_term sc t1,scope_term sc t2,scope_term sc t3)
    | Prim (c,ls) -> Prim(c,(List.map  (fun x -> (scope_term sc x)) ls))
+   | Exit t -> Exit (scope_term sc t)
    | Fst t1 ->  Fst (scope_term sc t1)
    | Snd t1 ->  Snd (scope_term sc t1)
    | Pair (t1,t2) -> Pair ((scope_term sc t1), (scope_term sc t2))

@@ -64,6 +64,7 @@ let prim_ls arg1 arg2 = arg1 :: arg2 :: []
 %token GREATER
 %token GREATEREQUAL
 %token IF
+%token EXIT
 %token IN
 %token LESS
 %token LESSEQUAL
@@ -160,9 +161,10 @@ valexpr:
   | LET IDENT valbind IN valexpr      { MiniML.Let(Ident.create $2, $3, $5) }
   | LETREC IDENT COLON simpletype EQUAL valexpr IN valexpr  { MiniML.Letrec(Ident.create $2, $4, $6, $8) }
   | IF valexpr THEN valexpr ELSE valexpr { MiniML.If( $2, $4, $6) }
-  | FST valexpr {MiniML.Fst $2}
-  | SND valexpr {MiniML.Snd $2}
-  | REF valexpr {MiniML.Ref $2}
+  | FST valexpr         {MiniML.Fst $2}
+  | SND valexpr         {MiniML.Snd $2}
+  | REF valexpr         {MiniML.Ref $2}
+  | EXIT valexpr        {MiniML.Exit $2}
   | EXCLAMATION valexpr {MiniML.Deref $2}
 ;
 valexpr1:

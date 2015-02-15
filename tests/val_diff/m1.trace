@@ -1,3 +1,4 @@
 
-call reg base ? :: ret val true ! :: call reg Inner.diff ? :: ret val 5 ! :: $
+call reg base ? :: ret val true ! :: 
+call reg diff ? :: ret val 5 ! :: $
 

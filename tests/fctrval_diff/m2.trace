@@ -1,4 +1,4 @@
 
-call afu Fctr Inner ? :: ret npth New ! :: 
-call dyn New.fcall ? :: ret val true ! :: $
+call afu Fctr Inner ? :: 
+ret npth New ! :: call dyn New.fcall ? :: ret val true ! :: $
 

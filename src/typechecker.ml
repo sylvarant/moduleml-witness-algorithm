@@ -225,6 +225,7 @@ struct
         tt
       | Ref t1 -> let t1_type = infer_type env t1 in
         (ref_type t1_type)
+      | Exit t1 -> (infer_type env t1)
       | Deref t1 -> let t1_type = infer_type env t1 in 
         (match t1_type with
           | LambdaType (TRef,[inty]) -> inty

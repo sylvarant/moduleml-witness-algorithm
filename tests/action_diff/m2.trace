@@ -1,4 +1,3 @@
 
-call reg base ? :: ret val true ! :: call reg (Inner.diff (fun x = (test x)))  ? 
-:: call reg test 4 ! :: $
+call reg base ? :: ret val true ! :: call reg fcall ? :: ret id 1 ! :: call acl 1 test1 ? :: call reg (test1 4) ! :: $ 
 

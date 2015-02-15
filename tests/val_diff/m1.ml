@@ -2,10 +2,7 @@ struct
 
     val base = true
 
-    module Inner =
-    struct
-        val diff = 5
-    end
+    val diff = 5
 
 end
 

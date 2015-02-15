@@ -174,6 +174,7 @@ struct
       print_string ")"
     | Fst e -> print_string "fst "; print_expression e
     | Snd e -> print_string "snd "; print_expression e
+    | Exit e -> print_string "exit "; print_expression e
     | Sequence (e1,e2) -> print_expression e1; 
       print_string ";" ;  print_space(); print_expression e2 
     | Ref e -> print_string "ref "; print_expression e

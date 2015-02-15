@@ -32,7 +32,7 @@ exception AlgoException of string
  *-----------------------------------------------------------------------------*)
 
 (* a function is a module path and has a set of argument types and a return type *)
-type func = { path : Modules.path ; types : MiniML.simple_type list }
+type func = { path : Modules.path ; types : MiniML.simple_type; return : MiniML.simple_type }
 
 (* the traces are converted into a triple : function, stepnumber, actions taken  *)
 type action = { func : func option ; step : int ; actions : MiniML.term list }
@@ -45,7 +45,10 @@ and comb_str = { path : Modules.path; mutable strct : member list }
 and member = Value of comb_val | Module of comb_str
 
 (* the functor calls *)
-type funccall = { mutable name : Modules.path option; cont : MiniMLMod.mod_term }
+type funccall = { mutable name : Modules.path option; cont : MiniMLMod.mod_term ; typ : MiniMLMod.mod_type }
+
+(* types of bindings *)
+type sigty = Abstract | ValBind of MiniML.simple_type | ModBind of MiniMLMod.mod_type
 
 
 (*-----------------------------------------------------------------------------
@@ -63,6 +66,15 @@ let rec convert_in = (function [x] -> Pident (Ident.create x)
 (* an hd that doesn't suck *)
 let hd = function [] -> None | x::xs -> Some x
 
+(* hd type *)
+let hdt = function [] -> MiniML.LambdaType(TUnit,[]) 
+  | { return = x} :: _ -> x
+
+(* a last member function *)
+let last lst = match (hd (List.rev lst)) with 
+  | None -> raise (AlgoException "No return type")
+  | Some x -> x 
+
 
 (*-----------------------------------------------------------------------------
  *  store path type associations (In the future update to objects)
@@ -71,13 +83,13 @@ module PathTbl =
 struct
 
   (* a table is a simple list of tuples *)
-  let emptytbl = []
+  let emptytbl x : (Modules.path * Mini.MiniML.simple_type) list ref = ref []
 
   (* compare paths *)
   let equal p1 p2 = (path_equal p1 p2)
 
   (* add *)
-  let add (p : Modules.path) (data : MiniML.simple_type) tbl = (p, data) :: tbl
+  let add (p : Modules.path) (data : MiniML.simple_type) tbl = tbl := (p, data) :: !tbl
 
   (* find a pth *)
   let rec find p1 = function
@@ -87,11 +99,63 @@ struct
       else (find p1 xs)
 
   (* search until you have a base *)
-  let rec findbase p1 tbl = match (find p1 tbl) with
+  let rec findbase p1 tbl = match (find p1 !tbl) with
     | MiniML.LambdaType _ as ty -> ty
     | MiniML.Typeconstr(p2,_) -> (findbase p2 tbl)
 
 end
+
+
+(* 
+ * ===  FUNCTION  ======================================================================
+ *     Name: binding_type
+ *  Description: find a member of the signature
+ * =====================================================================================
+ *)
+let rec binding_type ty path  : sigty = 
+
+  (* side affects all around *)
+  let ptbl = PathTbl.emptytbl 0 in
+    
+  (* clean up type from type definitions *)
+  let clean_simple ptbl ty = 
+    let rec convert = function
+      | MiniML.LambdaType(TRef,[ty]) -> MiniML.LambdaType(TRef,[(convert ty)])
+      | MiniML.LambdaType(TPair,[ty1;ty2]) -> MiniML.LambdaType(TPair,[(convert ty1);(convert ty2)])
+      | MiniML.LambdaType(TArrow,[ty1;ty2]) -> MiniML.LambdaType(TArrow,[(convert ty1);(convert ty2)])
+      | MiniML.Typeconstr(path,_) -> convert (PathTbl.findbase path ptbl)
+      | _ as x -> x
+    in
+    (convert ty)
+  in
+
+  (* find a string in a mod_type *)
+  let rec find str mty : sigty = 
+    (* find the type declaration *)
+    let rec find_decl = function [] -> raise (PathException ("Cannot find type path :: "^str))
+      | x::xs -> match x with
+        | Value_sig(id, vty) when (Ident.name id) = str -> ValBind vty.body
+        | Type_sig(id, decl) -> let sty = (match decl.manifest with
+          | None -> MiniML.LambdaType(TIgnore,[])
+          | Some dft -> (clean_simple ptbl dft.defbody)) in
+            PathTbl.add (Pident id) sty ptbl;
+          if (Ident.name id) = str then Abstract
+          else (find_decl xs)
+        | Module_sig(id,mty) when (Ident.name id) = str -> ModBind mty
+        | _ -> (find_decl xs)
+    in
+    match mty with 
+      | Signature sls -> (find_decl sls)
+      | Functor_type(arg,ml1,_) -> raise (PathException "Functor search not supported")
+  in
+
+  (* top level *)
+  let npath = List.rev path in
+  match npath with | [] -> ModBind ty
+    | str :: [] -> (find str ty)
+    | str :: ls -> match (find str ty) with
+      | ModBind mty -> (binding_type mty ls)
+      | _ -> raise (PathException "Path did not point to module")
 
 
 (*-----------------------------------------------------------------------------
@@ -104,7 +168,7 @@ struct
 
   let path = Pident id
 
-  (* fetch the outside *)
+  (* the hole *)
   let open_m = let id = Ident.create "M" in 
     (Open_str id)
 
@@ -127,7 +191,8 @@ struct
     (build ls)
     
   (* call a module element without args *)
-  let fetch p = (call p [])
+  let fetch ty p = let nty = (binding_type ty (convert_path p)) in
+    ((call p []),nty)
     
 end
 
@@ -157,33 +222,6 @@ end
 
 
 (*-----------------------------------------------------------------------------
- *  Module that produce diverging calls and module members
- *-----------------------------------------------------------------------------*)
-module Diverge =
-struct
-
-  let id = Ident.create "diverge" 
-
-  let call i x = MiniML.Apply((MiniML.Longident (Pident i)),x) 
-
-  let diverge = (call id (MiniML.Boolean true))
-
-  (* create diverging value *)
-  let value =  
-    let did = Ident.create "div" 
-    and var = Ident.create "x" in
-    let icall x = MiniML.Apply((MiniML.Longident (Pident did)),x) in
-    let func = MiniML.Function(var,MiniML.bool_type,(icall (MiniML.Longident (Pident var)))) in
-    let arrty = (MiniML.arrow_type MiniML.bool_type MiniML.bool_type) in
-    let div = MiniML.Letrec (did,arrty,func,(call did (MiniML.Boolean true))) in
-    Value_str(id,div)
-
-  let terminate = MiniML.Unit 
-
-end
-
-
-(*-----------------------------------------------------------------------------
  *  Module that handles the witness behaviour 
  *-----------------------------------------------------------------------------*)
 module Behaviour =
@@ -206,6 +244,7 @@ struct
       | MiniML.LambdaType(TPair,[ty1;ty2]) -> MiniML.Pair(convert ty1,convert ty2)
       | MiniML.LambdaType(TArrow,[ty1;ty2]) -> MiniML.Function(var,ty1,convert ty2)
       | MiniML.Typeconstr(path,_) -> convert (PathTbl.findbase path ptbl)
+     (*| _ as x -> Pretty.print_simple_type x; MiniML.Unit*)
     in
     (convert ty)
 
@@ -225,10 +264,6 @@ struct
       | _ -> (seq Steps.increment (make_let x (combine xs))))
     | _ -> raise (AlgoException "Cannot combine empty list")
 
-  (* compare ret's *)
-  let compare a = 
-    let comp = (MiniML.Prim ("==",[(Longident (Pident var));a])) in
-    MiniML.If (comp,Diverge.diverge,Diverge.terminate)
 
   (* combine if statements for steps *)
   let combine_if stp resp cont = 
@@ -241,11 +276,49 @@ struct
 
   (* make a function*)
   let rec make_f t = function
-    | [] -> t
-    | ty::tys -> let var = Ident.create "y" in
-      (make_f (MiniML.Function (var,ty,t)) tys)
+    | None -> t
+    | Some ty -> let var = Ident.create "x" in
+      (MiniML.Function (var,ty,t))
 
 end
+
+
+(*-----------------------------------------------------------------------------
+ *  Module that produce diverging calls and module members
+ *-----------------------------------------------------------------------------*)
+module Diverge =
+struct
+
+  let id = Ident.create "diverge" 
+
+  let call i x = MiniML.Apply((MiniML.Longident (Pident i)),x) 
+
+  let diverge = (call id (MiniML.Boolean true))
+
+  (* create diverging value *)
+  let value =  
+    let did = Ident.create "div" 
+    and var = Ident.create "x" in
+    let icall x = MiniML.Apply((MiniML.Longident (Pident did)),x) in
+    let func = MiniML.Function(var,MiniML.bool_type,(icall (MiniML.Longident (Pident var)))) in
+    let arrty = (MiniML.arrow_type MiniML.bool_type MiniML.bool_type) in
+    let div = let lr = MiniML.Letrec (did,arrty,func,(icall (MiniML.Longident (Pident var)))) in
+      MiniML.Function(var,MiniML.bool_type,lr) in
+      Value_str(id,div)
+
+  (* terminate with the correct type *)
+  let terminate = function 
+    | Some { path = _ ; types= _ ; return = rty } ->
+      (MiniML.Exit (Behaviour.default_val (PathTbl.emptytbl 0) rty))
+    | None -> MiniML.Exit MiniML.Unit
+
+  (* compare ret's *)
+  let compare f a = 
+    let comp = (MiniML.Prim ("==",[(Longident (Pident (Ident.create "x")));a])) in
+    MiniML.If (comp,diverge,(terminate f))
+
+end
+
 
 (* 
  * ===  FUNCTION  ======================================================================
@@ -266,28 +339,36 @@ let diff_types ty1 ty2 =
     Some (Structure [ Interaction.open_m; functorapp ; Diverge.value ; dist ])
 
 
-(* 
- * ===  FUNCTION  ======================================================================
- *     Name: find_argtype
- *  Description: find a functors argument type  
- * =====================================================================================
- *)
-let rec find_argtype ty path = 
+(*-----------------------------------------------------------------------------
+ *  Module that handles the dummy modules
+ *-----------------------------------------------------------------------------*)
+module WitnessMod = 
+struct
 
-  (* build a dummy module that the outside can apply to the module *)
+  (* extract the functor arg *) 
+  let extract = function
+    | ModBind(Functor_type (_,ml1,_)) -> ml1
+    | _ -> raise (PathException "Wrong type path: points to module")
+
+ (* 
+  * ===  FUNCTION  ======================================================================
+  *         Name:  build_dummy
+  *  Description:  build a dummy module
+  * =====================================================================================
+  *)
   let build_dummy mty =
 
     (* side affects all around *)
-    let ptbl = ref PathTbl.emptytbl in
+    let ptbl = (PathTbl.emptytbl 0) in
 
     (* convert a signature into a sequence of modules *)
     let rec convert = function [] -> []
       | x :: xs -> (match x with
-        | Value_sig (id,vty) -> Value_str(id,(Behaviour.default_val !ptbl vty.body)) 
+        | Value_sig (id,vty) -> Value_str(id,(Behaviour.default_val ptbl vty.body)) 
         | Type_sig (id,decl) -> let nty = (match decl.manifest with
           | None -> Behaviour.def_absty
           | Some dft -> dft.defbody) in
-          ptbl := PathTbl.add (Pident id) nty !ptbl;
+          PathTbl.add (Pident id) nty ptbl;
           let dty = { MiniML.params = []; MiniML.defbody = nty }
           and knd = { MiniML.arity = 0} in
           Type_str(id,knd,dty)
@@ -296,38 +377,15 @@ let rec find_argtype ty path =
     and convertm = function
       | Signature sls -> let strs = convert sls in (Structure strs)
       | _ -> raise (TraceException "Cannot apply outside functor to the module")
-    in
-    (convertm mty)
-  in
-    
+    in (convertm mty)
 
-  (* extract the functor arg *) 
-  let extract = function
-    | Functor_type (_,ml1,_) -> ml1
-    | _ -> raise (PathException "Wrong type path: points to module")
-  in
+  (* build argument for functor path *)
+  let build_arg p mty = 
+    let sigty = (binding_type mty p) in
+    let argty = extract sigty in
+    build_dummy argty
 
-  (* find a string in a mod_type *)
-  let rec find str mty = 
-    (* find the type declaration *)
-    let rec find_decl = function [] -> raise (PathException "Cannot find type path")
-      | x::xs -> match x with
-        | Value_sig(id, vty) when (Ident.name id) = str -> raise (PathException "Wrong type path: points to val")
-        | Type_sig(id, decl) when (Ident.name id) = str -> raise (PathException "Wrong type path: points to type decl")
-        | Module_sig(id,mty) when (Ident.name id) = str -> mty
-        | _ ->  (find_decl xs)
-    in
-    match mty with 
-      | Signature sls -> (find_decl sls)
-      | Functor_type(arg,ml1,_) -> raise (PathException "Functor search not supported")
-  in
-
-  (* top level *)
-  let process typ = build_dummy (extract typ) in
-  match path with | [] -> (process ty)
-    | str :: [] -> (process (find str ty))
-    | str :: ls -> let mty = (find str ty) in
-      (find_argtype mty ls)
+end
 
 
 (* 
@@ -338,9 +396,21 @@ let rec find_argtype ty path =
  *)
 let rec diff_traces ty m1 m2 tr1 tr2 = 
 
-  (* feed me side effects *)
+ (*-----------------------------------------------------------------------------
+  *  feed me side effects
+  *-----------------------------------------------------------------------------*)
   let fctr_ls = ref [] 
-  and modstr_ls = ref [] in
+  and modstr_ls = ref [] 
+  and closure_tbl = ref [] 
+  and functor_tbl = ref []
+  and func_tbl = PathTbl.emptytbl 0 in
+
+  (* last type *)
+  let last_type = ref (ValBind MiniML.bool_type) in
+
+  (* do a call to the outside *)
+  let call_out = function (l,r) -> last_type := r; l in
+
 
  (*-----------------------------------------------------------------------------
   *  parse the different traces
@@ -356,42 +426,55 @@ let rec diff_traces ty m1 m2 tr1 tr2 =
     let rec witness_action a  =
       (* parse trace call contents *)
       let rec parse_call = function
-        | MiniML.Longident p -> (Interaction.fetch p)
+        | MiniML.Longident p -> (call_out (Interaction.fetch ty p))
         | MiniML.Apply(x,y) -> MiniML.Apply((parse_call x),y)
         | _ -> raise (TraceException "Mistake in trace specification") 
+      in
+      (* parse dyn *)
+      let rec parse_dyn = function
+        | MiniML.Longident p -> let tl = List.rev (List.tl (List.rev (convert_path p))) in
+          call_out ((Interaction.call p []),(binding_type (List.hd !fctr_ls).typ tl))
       in
       match a with
       | Ret (Value t1) -> ((List.tl pathls),t1) 
       | Call (Regular x) -> (pathls, (parse_call x))
-      | Call (Dynamic x) -> (pathls, (parse_call x))
+      | Call (Dynamic x) -> (pathls, (parse_dyn x))
       | Call (ApplyLoc id) -> let var = Pident (Ident.create ("ref"^(string_of_int id))) in
         let nv = MiniML.Longident var in
         (pathls, (MiniML.Deref nv))
       | Call (ApplyCl (id,x)) -> let var = Pident (Ident.create ("id"^(string_of_int id))) in
+        (match x with 
+        | MiniML.Longident p -> let sty = (List.nth !closure_tbl (id-1)) in
+            (*Pretty.print_simple_type sty;*)
+            PathTbl.add p sty func_tbl; ()
+        | _ -> ());
         let appl = MiniML.Apply((MiniML.Longident var),x) in
-        ( pathls,appl)
+        (pathls,appl)
       | Call (ApplyFu (p1,opt)) -> 
         let arg = match opt with
           | Known p2 -> p2
           | New i -> let id = Ident.create ("Witn"^(string_of_int i))
-            and mt = (find_argtype ty (convert_path p1)) in
+            and mt = (WitnessMod.build_arg (convert_path p1) ty) in
             modstr_ls := Module_str(id,mt) :: !modstr_ls;
             (Pident id)
         in
         let app = MiniMLMod.Apply((MiniMLMod.Longident p1),(MiniMLMod.Longident arg)) in
-        let fc = { name = None; cont = app } in
+        let ModBind Functor_type(_,_,rty) = binding_type ty (convert_path p1) in
+        let fc = { name = None; cont = app ; typ = rty } in
         fctr_ls := fc :: !fctr_ls;
         (pathls,MiniML.Unit)
       | _ -> raise (TraceException "Mistake in trace specification")
     in
 
     (* module call parse : path & count *)
-    let rec mod_call tyls = function
+    let rec mod_call = function
       | Regular r -> (match r with
-        | MiniML.Longident p -> Some { path = p; types = tyls;  }
-        | MiniML.Apply(x,y) -> 
-          let typ = (MiniMLTyping.type_term MiniMLEnv.empty y) in (* improve env *)
-          (mod_call (typ.body::tyls) (Regular x) ))
+        | MiniML.Longident p -> let sty = (PathTbl.findbase p func_tbl) in
+          let out x = match x with MiniML.LambdaType(TArrow,[ty1;ty2])  -> (ty1,ty2) in 
+          let (l,r) = out sty in
+          let (ll,rr) = out l in
+          Some { path = p; types = ll; return = rr}
+        | MiniML.Apply(x,y) -> (mod_call (Regular x)))
       | _ -> raise (TraceException "Module cannot call preset entries")
     in
 
@@ -400,7 +483,11 @@ let rec diff_traces ty m1 m2 tr1 tr2 =
       | Traces.Value t -> None
       | Traces.Identifier id -> let var = (Ident.create ("id"^(string_of_int id))) 
         and nvar = MiniML.Longident (Pident (Ident.create "x")) in
-        Some (MiniML.Let(var,nvar,MiniML.Unit))
+        (match !last_type with
+        | ModBind mty -> functor_tbl := mty :: !functor_tbl
+        | ValBind sty -> closure_tbl := sty :: !closure_tbl);
+        let body = (Behaviour.default_val (PathTbl.emptytbl 0) (hdt pathls)) in
+        Some (MiniML.Let(var,nvar,body))
       | Traces.Ref id -> let var = (Ident.create ("ref"^(string_of_int id))) 
         and nvar = MiniML.Longident (Pident (Ident.create "x")) in
         Some (MiniML.Let(var,nvar,MiniML.Unit))
@@ -415,10 +502,10 @@ let rec diff_traces ty m1 m2 tr1 tr2 =
         | Exclamation x -> x
         | _ -> raise (TraceException "Mistake in final trace specification") in
       let (npath,action) = (witness_action my) in
-      let quickrec f s = { func = f;step = s ; actions = [Diverge.terminate] } in
+      let quickrec f s = { func = f;step = s ; actions = [Diverge.terminate f] } in
       let ends = match other with
         | Ret _ -> (quickrec (hd npath) step)
-        | Call y -> let f = (mod_call [] y) in 
+        | Call y -> let f = (mod_call y) in 
           (quickrec f (step+1)) 
       in
       (make_rec [action]) :: ends :: [] 
@@ -427,7 +514,7 @@ let rec diff_traces ty m1 m2 tr1 tr2 =
     (* capture the final tick *)
     let capture_action = function
       | Ret _ -> [make_rec [Diverge.diverge]]
-      | Call x -> let f = (mod_call [] x) in
+      | Call x -> let f = (mod_call x) in
         [{ func = f; step = (step +1); actions = [Diverge.diverge]}]
     in
 
@@ -448,20 +535,20 @@ let rec diff_traces ty m1 m2 tr1 tr2 =
 
     (* Module actions *)
     | ((Exclamation x)::xs,(Exclamation y)::ys) -> (match (x,y) with
-      | (Ret (Value a),Ret (Value b)) when a != b -> (make_rec [(Behaviour.compare a)]) :: []
+      | (Ret (Value a),Ret (Value b)) when a != b -> (make_rec [(Diverge.compare (hd pathls) a)]) :: []
       | (Ret a,Ret _) -> (match (mod_ret a) with
           | None -> (parse pathls (step + 1) xs ys) 
           | Some t -> (make_rec [t]) :: (parse pathls (step + 1) xs ys))
-      | (Call a,Call b) -> let Some f1 = (mod_call [] a)
-        and Some f2 = (mod_call [] b) in
+      | (Call a,Call b) -> let Some f1 = (mod_call a)
+        and Some f2 = (mod_call b) in
         (match (f1,f2) with
         | ({path = p1;_},{path = p2;_}) when not (path_equal p1 p2) ->
           let call1 = { func = Some f1; step = step ; actions = [Diverge.diverge]} 
-          and call2 = { func = Some f2; step = step ; actions = [Diverge.terminate]} in
+          and call2 = { func = Some f2; step = step ; actions = [Diverge.terminate (Some f2)]} in
           call1 :: call2 :: []
         | _ -> (parse (f1 :: pathls) (step + 1) xs ys))
-      | (Call a, Ret b) -> (make_rec [Diverge.terminate]) :: (capture_action x)
-      | (Ret a, Call b) -> (make_rec [Diverge.terminate]) :: (capture_action y))
+      | (Call a, Ret b) -> (make_rec [Diverge.terminate (hd pathls)]) :: (capture_action x)
+      | (Ret a, Call b) -> (make_rec [Diverge.terminate (hd pathls)]) :: (capture_action y))
 
     (* Ticks - if the module stops in one case but does not in the other  *)
     | (Tick :: [], (Exclamation y)::ys) -> (capture_action y) 
@@ -503,10 +590,10 @@ let rec diff_traces ty m1 m2 tr1 tr2 =
     let rec compress_values current ls = 
       (* pump into compact format *)
       let next ignore = ignore; match current with 
-        | { func = Some {path = cp; types = tys }; step = _; actions = [cont] } -> 
-          { path = Some cp; content = (Behaviour.make_f cont tys) }
+        | { func = Some {path = cp; types = tys ; return = rr }; step = _; actions = [cont] } -> 
+          { path = Some cp; content = (Behaviour.make_f cont (Some tys)) }
         | { func = None; step = _ ; actions = a } -> 
-          { path = None; content = (Behaviour.make_f (Behaviour.combine a) []) }
+          { path = None; content = (Behaviour.make_f (Behaviour.combine a) None) }
       in
       match ls with [] -> [(next ())]
 
@@ -518,22 +605,22 @@ let rec diff_traces ty m1 m2 tr1 tr2 =
           | _ -> raise (AlgoException "Logic fail in value compression"))
 
       (* targetted calls *)
-      | { func = Some{path = p1; types = tyls}; step = stp; actions = rep } :: xs -> 
+      | { func = Some{path = p1; types = tyls; return = rr}; step = stp; actions = rep } :: xs -> 
         (* helper to build new current *)
         let ncurrent term = 
             let nactions = [(Behaviour.combine_if stp rep term)] in
-            {func= Some{path = p1; types = tyls}; step = stp; actions = nactions}
+            {func= Some{path = p1; types = tyls; return = rr}; step = stp; actions = nactions}
         in
         match current with
-        | { func = Some{ path = cp ; _}; step = _; actions = [cont] } -> 
+        | { func = Some{ path = cp ; return = rr}; step = _; actions = [cont] } -> 
           if (path_equal p1 cp) 
           then let ncurr = ncurrent cont in
             (compress_values ncurr xs)
-          else let ncurr = ncurrent MiniML.Unit in 
+          else let ncurr = ncurrent (Behaviour.default_val (PathTbl.emptytbl 0) rr) in 
             (next ()) :: (compress_values ncurr xs)
         (* close up the main function *)
         | { func = None; step = _ ; actions = a } -> 
-          let ncurr = ncurrent MiniML.Unit in
+          let ncurr = ncurrent (Behaviour.default_val (PathTbl.emptytbl 0) rr) in
           (next ()) :: (compress_values ncurr xs)
       in
 
