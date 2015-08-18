@@ -323,7 +323,7 @@ end
 (* 
  * ===  FUNCTION  ======================================================================
  *         Name:  diff_types
- *  Description:  build a witness if the types or different 
+ *  Description:  build a witness if the types or different * DEPRECATED *
  * =====================================================================================
  *)
 let diff_types ty1 ty2 =
