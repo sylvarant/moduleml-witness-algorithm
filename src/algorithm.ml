@@ -5,7 +5,7 @@
  *
  *   Description:  the witness building algorithm
  *
- *        Author:  MYSTERY MAN, 
+ *        Author:  AJHL, 
  *       Company:  SOMEWHERE IT
  *
  * =====================================================================================

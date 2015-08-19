@@ -5,7 +5,7 @@
  *
  *    Description:  MiniML ML lexer based on the one by Leroy for miniML
  *
- *         Author:  MYSTERY MAN, 
+ *         Author:  AJHL, 
  *        Company:  SOMEWHERE
  *
  * =====================================================================================

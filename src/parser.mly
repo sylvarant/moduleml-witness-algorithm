@@ -6,7 +6,7 @@
  *    Description:  Parser for MiniML ML based on Leroy's parser for miniML
  *   Extension of:  Xavier Leroy's modular Modules implementation
  *
- *         Author:  MYSTERY MAN, 
+ *         Author:  AJHL, 
  *        Company:  SOMEWHERE
  *
  * =====================================================================================

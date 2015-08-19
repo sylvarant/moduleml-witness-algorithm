@@ -5,7 +5,7 @@
  *
  *   Description:  traces spec
  *
- *        Author:  MYSTERY MAN, 
+ *        Author:  AJHL, 
  *       Company:  SOMEWHERE IT
  *
  * =====================================================================================

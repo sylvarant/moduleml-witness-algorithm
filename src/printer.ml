@@ -5,7 +5,7 @@
  *
  *  Description: Pretty print the types for debugging purposes
  *
- *       Author: MYSTERY MAN, 
+ *       Author: AJHL, 
  *      Company: SOMEWHERE IT
  *
  * =====================================================================================

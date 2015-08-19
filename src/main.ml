@@ -5,7 +5,7 @@
  *
  *    Description:  Boot up the parser feed typechecker, scoper, compiler
  *
- *         Author:  MYSTERY MAN, 
+ *         Author:  AJHL, 
  *        Company:  SOMEWHERE IT
  *
  * =====================================================================================
