@@ -6,7 +6,7 @@
  *  Description: Pretty print the types for debugging purposes
  *
  *       Author: AJHL, 
- *      Company: SOMEWHERE IT
+ *      Company: Uppsala IT
  *
  * =====================================================================================
  *)

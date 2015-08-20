@@ -6,7 +6,7 @@
  *    Description:  MiniML ML lexer based on the one by Leroy for miniML
  *
  *         Author:  AJHL, 
- *        Company:  SOMEWHERE
+ *        Company:  Uppsala
  *
  * =====================================================================================
  *)

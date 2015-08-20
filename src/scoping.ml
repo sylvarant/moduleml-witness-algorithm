@@ -7,7 +7,7 @@
  *  Extension of:  Xavier Leroy's modular Modules implementation
  *
  *        Author:  AJHL, 
- *       Company:  SOMEWHERE IT
+ *       Company:  Uppsala IT
  *
  * =====================================================================================
  *)

@@ -6,7 +6,7 @@
  *   Description:  traces spec
  *
  *        Author:  AJHL, 
- *       Company:  SOMEWHERE IT
+ *       Company:  Uppsala IT
  *
  * =====================================================================================
  *)

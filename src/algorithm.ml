@@ -6,7 +6,7 @@
  *   Description:  the witness building algorithm
  *
  *        Author:  AJHL, 
- *       Company:  SOMEWHERE IT
+ *       Company:  Uppsala IT
  *
  * =====================================================================================
  *)

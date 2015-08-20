@@ -6,7 +6,7 @@
  *    Description:  Boot up the parser feed typechecker, scoper, compiler
  *
  *         Author:  AJHL, 
- *        Company:  SOMEWHERE IT
+ *        Company:  Uppsala IT
  *
  * =====================================================================================
  *)

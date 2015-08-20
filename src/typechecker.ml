@@ -6,7 +6,7 @@
  *  Description:  Typechecker for MiniML ML
  *
  *     Author:  AJHL, 
- *    Company:  SOMEWHERE IT
+ *    Company:  Uppsala IT
  *
  * =====================================================================================
  *)
