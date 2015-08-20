@@ -1,4 +1,6 @@
-# README #
+# A Witness Building Algorithm  #
+
+[![Build Status](https://travis-ci.org/sylvarant/moduleml-witness-algorithm.svg?branch=master)](https://travis-ci.org/sylvarant/moduleml-witness-algorithm)
 
 ### What is this repository for? ###
 
