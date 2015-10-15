@@ -28,7 +28,7 @@ setup:
 	-mkdir coverage
 
 report:
-	ocveralls --prefix coverage coverage/run*.out --send
+	ocveralls --prefix src/_build coverage/run*.out --send
 
 test:
 	@./test
