@@ -1,20 +1,23 @@
 #########################################
 #     Custom MakeFile                   #
-# By AJHL                  #
+# By AJHL                  							#
 #########################################
 
+
+#============================================
+# config
+#============================================
+
 OUTPUT_DIR = bin
-COMPILER_DIR = src
-COMPILER_BIN = main.native
-
+ALGO_DIR = src
 
 #============================================
-# compiler
+# algorithm
 #============================================
-compiler: 
-	$(MAKE) -C $(COMPILER_DIR)
+algorithm: 
+	$(MAKE) -C $(ALGO_DIR)
 
-now: compiler
+now: algorithm
 
 #============================================
 # extra's
@@ -22,12 +25,16 @@ now: compiler
 
 setup:
 	-mkdir witnesses
+	-mkdir coverage
+
+report:
+	ocveralls --prefix coverage coverage/run*.out --send
 
 test:
 	@./test
 
 clean:
-	$(MAKE) clean -C $(COMPILER_DIR)
+	$(MAKE) clean -C $(ALGO_DIR)
 	rm -fr witnesses/*
 
 

@@ -47,7 +47,7 @@ do
 
     # test compilation and abort further tests if failed
     #echo ${folder}/m1.ml ${folder}/m2.ml ${folder}/m1.trace ${folder}/m2.trace $output
-    $Builder ${folder}/m1.ml ${folder}/m2.ml ${folder}/m1.trace ${folder}/m2.trace $output 
+    BISECT_FILE=coverage/run $Builder ${folder}/m1.ml ${folder}/m2.ml ${folder}/m1.trace ${folder}/m2.trace $output 
     res=$?
     printr $res 0
 
