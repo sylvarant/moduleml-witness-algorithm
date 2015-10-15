@@ -1,6 +1,6 @@
 # A Witness Building Algorithm  #
 
-[![Build Status](https://travis-ci.org/sylvarant/moduleml-witness-algorithm.svg?branch=master)](https://travis-ci.org/sylvarant/moduleml-witness-algorithm)[![Coverage Status](https://coveralls.io/repos/sylvarant/moduleml-witness-algorithm/badge.svg?branch=master&service=github)](https://coveralls.io/github/sylvarant/moduleml-witness-algorithm?branch=master)
+[![Build Status](https://travis-ci.org/sylvarant/moduleml-witness-algorithm.svg?branch=master)](https://travis-ci.org/sylvarant/moduleml-witness-algorithm) [![Coverage Status](https://coveralls.io/repos/sylvarant/moduleml-witness-algorithm/badge.svg?branch=master&service=github)](https://coveralls.io/github/sylvarant/moduleml-witness-algorithm?branch=master)
 
 ### What is this repository for? ###
 
@@ -27,6 +27,7 @@ make test
 ### Repository Structure ###
 * src/ : algorithm source code
 * tests/ : a series of differing MiniML programs that the algorithm can build a witness for
+* witness/ : the produced witnesses are placed here
 
 ## License
 
