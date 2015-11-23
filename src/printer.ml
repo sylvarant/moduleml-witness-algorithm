@@ -56,10 +56,10 @@ struct
             let s = String.make 1 (Char.chr(97 + n)) in
             variable_names := (v, s) :: !variable_names;
             s in print_string "'"; print_string name
-    | LambdaType(TBool,_) -> print_string "Bool"
-    | LambdaType(TInt,_) -> print_string "Int"
-    | LambdaType(TUnit,_) -> print_string "Unit"
-    | LambdaType(TRef,[t1]) -> print_string "(Ref ";
+    | LambdaType(TBool,_) -> print_string "bool"
+    | LambdaType(TInt,_) -> print_string "int"
+    | LambdaType(TUnit,_) -> print_string "unit"
+    | LambdaType(TRef,[t1]) -> print_string "(ref ";
       print_simple_type t1;
       print_string ")"
     | LambdaType(TArrow,[t1;t2]) -> print_simple_type t1; 
@@ -165,10 +165,12 @@ struct
       print_string " = "; print_expression e; print_string ")"
     | Apply (e1,e2) -> print_string "("; print_expression e1; print_string " ";
       print_expression e2; print_string ")"
-    | If (e1,e2,e3) -> print_string "(if "; print_expression e1; print_string "then "; 
+    | If (e1,e2,e3) -> print_string "(if "; print_expression e1; print_string " then "; 
       print_expression e2; print_string " else "; print_expression e3; print_string ")"
     | Let (x,e1,e2) -> print_string ("(let "^(Ident.name x)^" = "); print_expression e1; 
       print_string " in "; print_expression e2; print_string ")"
+    | Prim (x,[a;b]) -> print_string "("; print_expression a; print_string (" "^x^" "); 
+      print_expression b; print_string ")"
     | Prim (x,ls) -> print_string ("("^x); 
       (List.iter (fun e -> print_string " "; print_expression e) ls); 
       print_string ")"
@@ -178,8 +180,8 @@ struct
     | Sequence (e1,e2) -> print_expression e1; 
       print_string ";" ;  print_space(); print_expression e2 
     | Ref e -> print_string "ref "; print_expression e
-    | Deref e -> print_string "!"; print_expression e
-    | Assign (e1,e2) -> print_expression e1; print_string ":="; print_expression e2
+    | Deref e -> print_string "(!"; print_expression e; print_string ")"
+    | Assign (e1,e2) -> print_string "("; print_expression e1; print_string ":="; print_expression e2; print_string ")"
     | Letrec(x,ty,e1,e2) -> print_string ("letrec "^(Ident.name x)^" : "); 
       print_simple_type ty; print_string " = "; print_expression e1; 
       print_string " in "; print_expression e2

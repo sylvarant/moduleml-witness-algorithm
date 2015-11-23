@@ -253,7 +253,7 @@ struct
 
   (* create main function *)
   let main x =
-    let id = Ident.create "main" in
+    let id = Ident.create "start" in
     Value_str(id,x)
 
   (* combine the actions *)
@@ -293,7 +293,12 @@ struct
 
   let call i x = MiniML.Apply((MiniML.Longident (Pident i)),x) 
 
-  let diverge = (call id (MiniML.Boolean true))
+  (* diverge with the correct type *)
+  let diverge = function
+    | Some { path = _ ; types= _ ; return = rty } ->
+      let ignore = (Behaviour.default_val (PathTbl.emptytbl 0) rty) in
+      MiniML.Let (Ident.create ("y"),(call id (MiniML.Boolean true)),ignore)
+    | None -> (call id (MiniML.Boolean true))
 
   (* create diverging value *)
   let value =  
@@ -315,7 +320,7 @@ struct
   (* compare ret's *)
   let compare f a = 
     let comp = (MiniML.Prim ("==",[(Longident (Pident (Ident.create "x")));a])) in
-    MiniML.If (comp,diverge,(terminate f))
+    MiniML.If (comp,(diverge f),(terminate f))
 
 end
 
@@ -334,9 +339,10 @@ let diff_types ty1 ty2 =
     let ident = Ident.create "X" 
     and aident = Ident.create "Break" in
     let functr =  Functor (ident,ty1,Longident (Pident ident)) in
+    let tt = { path = (Pident (Ident.create ""))  ; types= MiniML.bool_type ; return = MiniML.bool_type } in
     let functorapp = Module_str (aident,MiniMLMod.Apply(functr, Longident Interaction.path)) 
-    and dist = (Behaviour.main Diverge.diverge) in
-    Some (Structure [ Interaction.open_m; functorapp ; Diverge.value ; dist ])
+    (*and dist = (Behaviour.main (Diverge.diverge tt))*) in
+    Some (Structure [ Interaction.open_m; functorapp ; Diverge.value (*; dist*) ])
 
 
 (*-----------------------------------------------------------------------------
@@ -512,10 +518,10 @@ let rec diff_traces ty m1 m2 tr1 tr2 =
     in
 
     (* capture the final tick *)
-    let capture_action = function
-      | Ret _ -> [make_rec [Diverge.diverge]]
+    let capture_action f = function
+      | Ret _ -> [make_rec [(Diverge.diverge f)]]
       | Call x -> let f = (mod_call x) in
-        [{ func = f; step = (step +1); actions = [Diverge.diverge]}]
+        [{ func = f; step = (step +1); actions = [(Diverge.diverge f)]}]
     in
 
     (* parse top level *)
@@ -543,16 +549,16 @@ let rec diff_traces ty m1 m2 tr1 tr2 =
         and Some f2 = (mod_call b) in
         (match (f1,f2) with
         | ({path = p1;_},{path = p2;_}) when not (path_equal p1 p2) ->
-          let call1 = { func = Some f1; step = step ; actions = [Diverge.diverge]} 
+          let call1 = { func = Some f1; step = step ; actions = [(Diverge.diverge (Some f1))]} 
           and call2 = { func = Some f2; step = step ; actions = [Diverge.terminate (Some f2)]} in
           call1 :: call2 :: []
         | _ -> (parse (f1 :: pathls) (step + 1) xs ys))
-      | (Call a, Ret b) -> (make_rec [Diverge.terminate (hd pathls)]) :: (capture_action x)
-      | (Ret a, Call b) -> (make_rec [Diverge.terminate (hd pathls)]) :: (capture_action y))
+      | (Call a, Ret b) -> (make_rec [Diverge.terminate (hd pathls)]) :: (capture_action (hd pathls) x)
+      | (Ret a, Call b) -> (make_rec [Diverge.terminate (hd pathls)]) :: (capture_action (hd pathls) y))
 
     (* Ticks - if the module stops in one case but does not in the other  *)
-    | (Tick :: [], (Exclamation y)::ys) -> (capture_action y) 
-    | ((Exclamation x)::xs, Tick::[]) -> (capture_action x) 
+    | (Tick :: [], (Exclamation y)::ys) -> (capture_action (hd pathls) y) 
+    | ((Exclamation x)::xs, Tick::[]) -> (capture_action (hd pathls) x) 
 
     (* Traces are off *)
     | _ -> raise (TraceException "Traces are wrong or not different")
@@ -687,7 +693,7 @@ let rec diff_traces ty m1 m2 tr1 tr2 =
   let fcalls = List.map (function { name = Some (Pident n); cont = c} -> Module_str(n,c)) !fctr_ls in
   let main = List.hd strls in
   let comm = List.tl strls in
-  (Structure (!modstr_ls @ comm @ setup @ fcalls @ [main]))
+  (Structure (!modstr_ls @ setup @ comm @ fcalls @ [main]))
 
 
 (* 
