@@ -271,7 +271,7 @@ struct
       | x :: xs -> (seq Steps.increment (make_let x (combo xs)))
       | _ -> raise (AlgoException "Cannot combine empty list")
     in
-    let comp = MiniML.Prim ("==",[Steps.deref;Constant (stp - 1)]) in
+    let comp = MiniML.Prim ("==",[Steps.deref;Constant stp]) in
     (seq Steps.increment (MiniML.If (comp,(combo resp),cont)))
 
   (* make a function*)
@@ -537,7 +537,7 @@ let rec diff_traces ty m1 m2 tr1 tr2 =
 
       (* respond and move on *)
       | _ -> let (npath,action) = (witness_action x) in 
-        (make_rec [action]) :: (parse npath (step + 1) xs ys))
+        (make_rec [action]) :: (parse npath step xs ys))
 
     (* Module actions *)
     | ((Exclamation x)::xs,(Exclamation y)::ys) -> (match (x,y) with
@@ -667,7 +667,7 @@ let rec diff_traces ty m1 m2 tr1 tr2 =
     (* clean up compression to produces nice modules *) 
     let rec clean = function [] -> []
       | x :: xs -> match x with
-        | Value { path = None; content = c}  -> (Value_str((Ident.create "main"),c)) :: (clean xs)
+        | Value { path = None; content = c}  -> (Value_str((Ident.create "start"),c)) :: (clean xs)
         | Value { path = Some (Pident i); content = c} -> Value_str(i,c) :: (clean xs)
         | Module {path = p; strct = ls } -> let id = (match p with
           | Pident i -> i
@@ -677,7 +677,7 @@ let rec diff_traces ty m1 m2 tr1 tr2 =
     in
 
     (* top level compress *)
-    let coms = compress_values { func = None; step = 0 ; actions = []} (sort_ls ls) in
+    let coms = compress_values { func = None; step = 1 ; actions = []} (sort_ls ls) in
     let dummy = {path = Pident (Ident.create "M"); strct = []} in
     let vlist = compress_strct dummy coms in
     let result = (clean vlist) @ (clean dummy.strct) in
@@ -689,7 +689,7 @@ let rec diff_traces ty m1 m2 tr1 tr2 =
   *-----------------------------------------------------------------------------*)
    
   let setup = [Interaction.open_m; Steps.value ; Diverge.value] 
-  and strls = (compress (parse [] 0 tr1 tr2)) in
+  and strls = (compress (parse [] 1 tr1 tr2)) in
   let fcalls = List.map (function { name = Some (Pident n); cont = c} -> Module_str(n,c)) !fctr_ls in
   let main = List.hd strls in
   let comm = List.tl strls in

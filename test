@@ -68,3 +68,4 @@ fi
 echo -e " of \033[1;33m[$TestCounter]\033[0m Tests in $(expr `date +%s` - $StartTime)(s)"
 
 exit $FAIL
+
